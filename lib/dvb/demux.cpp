@@ -26,7 +26,7 @@ enum dmx_source {
 	DMX_SOURCE_FRONT1,
 	DMX_SOURCE_FRONT2,
 	DMX_SOURCE_FRONT3,
-	DMX_SOURCE_DVR0   = 16,
+	DMX_SOURCE_DVR0 = 16,
 	DMX_SOURCE_DVR1,
 	DMX_SOURCE_DVR2,
 	DMX_SOURCE_DVR3
@@ -44,18 +44,14 @@ static int determineBufferCount()
 	}
 	unsigned int megabytes = si.totalram >> 20;
 	int result;
-	if (megabytes > 1600)
-		result = 160; // 4096MB systems: Use 32MB IO buffers (PC)
-	else if (megabytes > 800)
-		result = 80; // 2048MB systems: Use 16MB IO buffers (PC,rpi)
-	else if (megabytes > 400)
+	if (megabytes > 400)
 		result = 40; // 1024MB systems: Use 8MB IO buffers (vusolo2, vuduo2, ...)
 	else if (megabytes > 200)
 		result = 20; // 512MB systems: Use 4MB IO buffers (et9x00, vuultimo, ...)
 	else if (megabytes > 100)
 		result = 16; // 256MB systems: Use 3MB demux buffers (dm8000, et5x00, vuduo)
 	else
-		result = 8; // Smaller boxes: Use 1.5MB buffer
+		result = 8; // Smaller boxes: Use 1.5MB buffer (dm7025)
 	return result;
 }
 
@@ -71,6 +67,7 @@ eDVBDemux::eDVBDemux(int adapter, int demux):
 {
 	if (CFile::parseInt(&m_dvr_source_offset, "/proc/stb/frontend/dvr_source_offset") == 0)
 		eDebug("[eDVBDemux] using %d for PVR DMX_SET_SOURCE", m_dvr_source_offset);
+
 }
 
 eDVBDemux::~eDVBDemux()
@@ -81,11 +78,8 @@ int eDVBDemux::openDemux(void)
 {
 	char filename[32] = {};
 	snprintf(filename, sizeof(filename), "/dev/dvb/adapter%d/demux%d", adapter, demux);
-	eTrace("[eDVBDemux] Open demux '%s'.", filename);
-	int fd = ::open(filename, O_RDWR | O_CLOEXEC);
-	if (fd < 0)
-		eDebug("[eDVBDemux] Error: Unable to open demux '%s'!", filename);
-	return fd;
+	eDebug("[eDVBDemux] open demux %s", filename);
+	return ::open(filename, O_RDWR | O_CLOEXEC);
 }
 
 int eDVBDemux::openDVR(int flags)
@@ -144,7 +138,7 @@ RESULT eDVBDemux::createPESReader(eMainloop *context, ePtr<iDVBPESReader> &reade
 	return res;
 }
 
-RESULT eDVBDemux::createTSRecorder(ePtr<iDVBTSRecorder> &recorder, unsigned int packetsize, bool streaming)
+RESULT eDVBDemux::createTSRecorder(ePtr<iDVBTSRecorder> &recorder, int packetsize, bool streaming)
 {
 	if (m_dvr_busy)
 		return -EBUSY;
@@ -262,11 +256,10 @@ RESULT eDVBSectionReader::start(const eDVBSectionFilterMask &mask)
 	if (fd < 0)
 		return -ENODEV;
 
-	eTrace("[eDVBSectionReader] DMX_SET_FILTER pid=%d", mask.pid);
+	eDebug("[eDVBSectionReader] DMX_SET_FILTER pid=%d", mask.pid);
 	notifier->start();
 
 	dmx_sct_filter_params sct = {};
-	memset(&sct, 0, sizeof(sct));
 	sct.pid     = mask.pid;
 	sct.timeout = 0;
 	sct.flags   = DMX_IMMEDIATE_START;
@@ -379,8 +372,6 @@ RESULT eDVBPESReader::start(int pid)
 	m_notifier->start();
 
 	dmx_pes_filter_params flt = {};
-	memset(&flt, 0, sizeof(flt));
-
 	flt.pes_type = DMX_PES_OTHER;
 	flt.pid     = pid;
 	flt.input   = DMX_IN_FRONTEND;
@@ -534,7 +525,7 @@ int eDVBRecordFileThread::AsyncIO::poll()
 
 int eDVBRecordFileThread::AsyncIO::start(int fd, off_t offset, size_t nbytes, void* buffer)
 {
-	memset(&aio, 0, sizeof(struct aiocb)); // Documentation says "zero it before call".
+	memset(&aio, 0, sizeof(aiocb)); // Documentation says "zero it before call".
 	aio.aio_fildes = fd;
 	aio.aio_nbytes = nbytes;
 	aio.aio_offset = offset;   // Offset can be omitted with O_APPEND
@@ -550,8 +541,8 @@ int eDVBRecordFileThread::asyncWrite(int len)
 	suseconds_t diff;
 	gettimeofday(&starttime, NULL);
 #endif
-	if(!getProtocol())
-		m_ts_parser.parseData(m_current_offset, m_buffer, len);
+
+	m_ts_parser.parseData(m_current_offset, m_buffer, len);
 
 #ifdef SHOW_WRITE_TIME
 	gettimeofday(&now, NULL);
@@ -803,11 +794,8 @@ RESULT eDVBTSRecorder::start()
 
 	char filename[128];
 	snprintf(filename, 128, "/dev/dvb/adapter%d/demux%d", m_demux->adapter, m_demux->demux);
-#if HAVE_HISILICON
-	m_source_fd = ::open(filename, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
-#else
+
 	m_source_fd = ::open(filename, O_RDONLY | O_CLOEXEC);
-#endif
 
 	if (m_source_fd < 0)
 	{
@@ -818,8 +806,6 @@ RESULT eDVBTSRecorder::start()
 	setBufferSize(1024*1024);
 
 	dmx_pes_filter_params flt = {};
-	memset(&flt, 0, sizeof(flt));
-
 	flt.pes_type = DMX_PES_OTHER;
 	flt.output  = DMX_OUT_TSDEMUX_TAP;
 	flt.pid     = i->first;
