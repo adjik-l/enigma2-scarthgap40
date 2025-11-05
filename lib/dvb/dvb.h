@@ -165,6 +165,7 @@ class eDVBResourceManager: public iObject, public sigc::trackable
 	void addAdapter(iDVBAdapter *adapter, bool front = false);
 	void setUsbTuner();
 
+public:
 	struct active_channel
 	{
 		eDVBChannelID m_channel_id;
@@ -173,7 +174,8 @@ class eDVBResourceManager: public iObject, public sigc::trackable
 
 		active_channel(const eDVBChannelID &chid, eDVBChannel *ch) : m_channel_id(chid), m_channel(ch) { }
 	};
-
+	void feStateChanged();
+private:
 	std::list<active_channel> m_active_channels, m_active_simulate_channels;
 
 	ePtr<iDVBChannelList> m_list;
@@ -181,6 +183,7 @@ class eDVBResourceManager: public iObject, public sigc::trackable
 	static eDVBResourceManager *instance;
 	friend class eDVBChannel;
 	friend class eFBCTunerManager;
+	friend class eRTSPStreamClient;
 	ePtr<eFBCTunerManager> m_fbcmng;
 	RESULT addChannel(const eDVBChannelID &chid, eDVBChannel *ch);
 	RESULT removeChannel(eDVBChannel *ch);
@@ -191,7 +194,6 @@ class eDVBResourceManager: public iObject, public sigc::trackable
 	sigc::connection m_cached_channel_state_changed_conn;
 	ePtr<eTimer> m_releaseCachedChannelTimer;
 	void DVBChannelStateChanged(iDVBChannel*);
-	void feStateChanged();
 #ifndef SWIG
 public:
 #endif
@@ -201,6 +203,7 @@ public:
 
 	RESULT setChannelList(iDVBChannelList *list);
 	RESULT getChannelList(ePtr<iDVBChannelList> &list);
+	RESULT getActiveChannels(std::list<active_channel> &list);
 
 	enum {
 			/* errNoFrontend = -1 replaced by more spcific messages */
@@ -308,6 +311,7 @@ private:
 	sigc::signal<void(iDVBChannel*,int)> m_event;
 	int m_state;
 	ePtr<iTsSource> m_source;
+	std::string m_streaminfo_file;
 
 			/* for channel list */
 	ePtr<eDVBResourceManager> m_mgr;
