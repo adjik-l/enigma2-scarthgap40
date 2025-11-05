@@ -88,12 +88,13 @@ def setEPGCachePath(configElement):
 ####################################################
 
 
-enigma.eProfileWrite("Twisted")
-try:  # Configure the twisted processor
-	from twisted.python.runtime import platform
-	platform.supportsThreads = lambda: True
-	from e2reactor import install
-	install()
+profile("Twisted")
+try:
+	import twisted.python.runtime
+
+	import e2reactor
+	e2reactor.install()
+
 	from twisted.internet import reactor
 
 	def runReactor():
