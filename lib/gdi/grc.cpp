@@ -4,7 +4,6 @@
 #include <lib/gdi/font.h>
 #include <lib/base/init.h>
 #include <lib/base/init_num.h>
-#include <lib/base/esimpleconfig.h>
 #ifdef USE_LIBVUGLES2
 #include <vuplus_gles.h>
 #endif
