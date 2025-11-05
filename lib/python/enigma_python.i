@@ -469,9 +469,19 @@ extern int getPrevAsciiCode();
 extern void addFont(const char *filename, const char *alias, int scale_factor, int is_replacement, int renderflags = 0);
 extern const char *getEnigmaVersionString();
 extern const char *getBoxType();
+extern const char *getBrand();
+extern const char *getE2Rev();
+extern const char *getPlatform();
 extern void dump_malloc_stats(void);
+#ifndef HAVE_OSDANIMATION
+extern void setAnimation_current(int a);
+extern void setAnimation_speed(int speed);
+extern void setAnimation_current_listbox(int a);
+#endif
 extern void pauseInit(void);
-extern void resumeInit(void);
+rn void resumeInit(void);
+extern int checkInternetAccess(const char* host, int timeout = 3);
+extern int getE2Flags();
 extern bool checkLogin(const char *user, const char *pwd);
 %}
 
@@ -482,10 +492,25 @@ extern void quitMainloop(int exit_code);
 extern eApplication *getApplication();
 extern const char *getEnigmaVersionString();
 extern const char *getBoxType();
+extern const char *getBrand();
+extern const char *getE2Rev();
+extern const char *getPlatform();
 extern void dump_malloc_stats(void);
+#ifndef HAVE_OSDANIMATION
+extern void setAnimation_current(int a);
+extern void setAnimation_speed(int speed);
+extern void setAnimation_current_listbox(int a);
+#endif
 extern void pauseInit(void);
 extern void resumeInit(void);
+extern int checkInternetAccess(const char* host, int timeout = 3);
+extern int getE2Flags();
 extern bool checkLogin(const char *user, const char *pwd);
 
 %include <lib/python/python_console.i>
 %include <lib/python/python_base.i>
+%extend eWidget {
+    std::string __str__() {
+        return $self->dumpObject();
+    }
+}
