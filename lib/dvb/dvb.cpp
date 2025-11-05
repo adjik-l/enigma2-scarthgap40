@@ -372,16 +372,7 @@ eDVBUsbAdapter::eDVBUsbAdapter(int nr)
 	while (vtunerFd < 0)
 	{
 		snprintf(filename, sizeof(filename), "/dev/misc/vtuner%d", vtunerid);
-		if (::access(filename, F_OK) < 0)
-		{
-			eDebug("[eDVBUsbAdapter] '%s' not found", filename);
-			snprintf(filename, sizeof(filename), "/dev/vtuner%d", vtunerid);
-			if (::access(filename, F_OK) < 0)
-			{
-				eDebug("[eDVBUsbAdapter] '%s' not found -> stop here!", filename);
-				break;
-			}
-		}
+		if (::access(filename, F_OK) < 0) break;
 		vtunerFd = open(filename, O_RDWR | O_CLOEXEC);
 		if (vtunerFd < 0)
 		{
@@ -418,7 +409,7 @@ eDVBUsbAdapter::eDVBUsbAdapter(int nr)
 		goto error;
 	}
 
-#if _IOC_NONE > 0		/* MIPS receivers return _IOC_NONE=1 */
+#if _IOC_NONE > 0				/* MIPS receivers return _IOC_NONE=1 */
 #define VTUNER_GET_MESSAGE      1
 #define VTUNER_SET_RESPONSE     2
 #define VTUNER_SET_NAME         3
@@ -427,7 +418,7 @@ eDVBUsbAdapter::eDVBUsbAdapter(int nr)
 #define VTUNER_SET_FE_INFO      6
 #define VTUNER_SET_NUM_MODES    7
 #define VTUNER_SET_MODES        8
-#else				/* ARM receivers return _IOC_NONE=0 */
+#else							/* ARM receivers return _IOC_NONE=0 */
 #define VTUNER_GET_MESSAGE     11
 #define VTUNER_SET_RESPONSE    12
 #define VTUNER_SET_NAME        13
@@ -608,10 +599,6 @@ void *eDVBUsbAdapter::vtunerPump()
 			if (FD_ISSET(demuxFd, &rset))
 			{
 				ssize_t size = singleRead(demuxFd, buffer, sizeof(buffer));
-
-				if(size < 188)
-					continue;
-
 				if (size > 0 && writeAll(vtunerFd, buffer, size) <= 0)
 				{
 					break;
@@ -755,7 +742,7 @@ PyObject *eDVBResourceManager::setFrontendSlotInformations(ePyObject list)
 {
 	if (!PyList_Check(list))
 	{
-		PyErr_SetString(PyExc_TypeError, "eDVBResourceManager::setFrontendSlotInformations argument should be a python list");
+		PyErr_SetString(PyExc_Exception, "eDVBResourceManager::setFrontendSlotInformations argument should be a python list");
 		return NULL;
 	}
 	unsigned int assigned=0;
@@ -922,9 +909,8 @@ RESULT eDVBResourceManager::allocateFrontend(ePtr<eDVBAllocatedFrontend> &fe, eP
 	eSmartPtrList<eDVBRegisteredFrontend> &frontends = simulate ? m_simulate_frontend : m_frontend;
 	eDVBRegisteredFrontend *best, *fbc_fe, *best_fbc_fe;
 	int bestval, foundone, current_fbc_setid, c;
-	bool check_fbc_leaf_linkable;
-	[[maybe_unused]] bool is_configured_sat;
-	[[maybe_unused]] long link;
+	bool check_fbc_leaf_linkable, is_configured_sat;
+	long link;
 
 	fbc_fe  = NULL;
 	best_fbc_fe = NULL;
@@ -1090,7 +1076,6 @@ RESULT eDVBResourceManager::allocateDemux(eDVBRegisteredFrontend *fe, ePtr<eDVBA
 	 * On some hardware, there are less ca devices than demuxes, so try to leave
 	 * the first demuxes for live tv, and start with the last for pvr playback
 	 */
-
 	bool use_decode_demux = (fe || (cap & iDVBChannel::capDecode));
 
 	if (!use_decode_demux)
@@ -1164,12 +1149,6 @@ RESULT eDVBResourceManager::getChannelList(ePtr<iDVBChannelList> &list)
 		return 0;
 	else
 		return -ENOENT;
-}
-
-RESULT eDVBResourceManager::getActiveChannels(std::list<active_channel> &list)
-{
-	list = m_active_channels;
-	return 0;
 }
 
 #define eDebugNoSimulate(x...) \
@@ -1462,8 +1441,9 @@ int eDVBResourceManager::canAllocateChannel(const eDVBChannelID &channelid, cons
 	if (!simulate && m_cached_channel)
 	{
 		eDVBChannel *cache_chan = (eDVBChannel*)&(*m_cached_channel);
-		if(channelid==cache_chan->getChannelID())
+		if(channelid==cache_chan->getChannelID()) {
 			return tuner_type_channel_default(m_list, channelid, system);
+		}
 	}
 
 		/* first, check if a channel is already existing. */
@@ -1828,9 +1808,9 @@ void eDVBChannel::cueSheetEvent(int event)
 				eDebug("[eDVBChannel] skipmode ratio is %lld:90000, bitrate is %d bit/s", m_cue->m_skipmode_ratio, bitrate);
 						/* i agree that this might look a bit like black magic. */
 				m_skipmode_n = 512*1024; /* must be 1 iframe at least. */
-				// The / and * are done in order, resulting in a distinct integer
+				//* The / and * are done in order, resulting in a distinct integer
 				// truncation after bitrate / 8 / 90000
-				// I don't think that this is intended...
+				// I don't think that this is intended*/
 				m_skipmode_frames = m_cue->m_skipmode_ratio / 90000;
 				m_skipmode_m = (bitrate / 8) * (m_skipmode_frames / 8);
 				m_skipmode_frames_remainder = 0;
@@ -2044,10 +2024,7 @@ void eDVBChannel::getNextSourceSpan(off_t current_offset, size_t bytes_read, off
 			eSingleLocker l(m_tstools_lock);
 			if (m_tstools.getNextAccessPoint(nextap, now, pts))
 			{
-				if (pts >= 0)
-					pts = now + 90000; /* approx. 1s */
-				else
-					pts = now - 90000; /* approx. 1s */
+				pts = now - 90000; /* approx. 1s */
 				eDebug("[eDVBChannel] AP relative seeking failed!");
 			} else
 			{
@@ -2091,7 +2068,7 @@ void eDVBChannel::getNextSourceSpan(off_t current_offset, size_t bytes_read, off
 			{
 					/* in normal playback, just start at the next zone. */
 				start = i->first;
-				size = diff_upto(i->second, start, max);
+				size = align(diff_upto(i->second, start, max), blocksize);
 				eDebug("[eDVBChannel] skip");
 				if (m_skipmode_m < 0)
 				{
@@ -2102,16 +2079,16 @@ void eDVBChannel::getNextSourceSpan(off_t current_offset, size_t bytes_read, off
 			}
 			else
 			{
-					/* when skipping reverse, however, choose the zone before. */
-					/* This returns a size 0 block, in case you noticed... */
+				/* when skipping reverse, however, choose the zone before. */
+				/* This returns a size 0 block, in case you noticed... */
 				--i;
-				eDebug("[eDVBChannel] skip to previous block, which is %jd..%jd", (intmax_t)i->first, (intmax_t)i->second);
+				eDebug("[eDVBChannel] skip to previous block, which is %ju..%ju", i->first, i->second);
 				size_t len = diff_upto(i->second, i->first, max);
 				start = i->second - len;
 				eDebug("[eDVBChannel] skipping to %jd, %zd", (intmax_t)start, len);
 			}
 
-			eDebug("[eDVBChannel] result: %jd, %zx (%jd %jd)", (intmax_t)start, size, (intmax_t)i->first, (intmax_t)i->second);
+			eDebug("[eDVBChannel] result: %jd, %zx (%ju %ju)", (intmax_t)start, size, i->first, i->second);
 			return;
 		}
 	}
@@ -2289,13 +2266,15 @@ RESULT eDVBChannel::getDemux(ePtr<iDVBDemux> &demux, int cap)
 	if (!our_demux)
 	{
 		demux = 0;
-		// eDebug"[eDVBChannel] DEBUG getDemux call allocateDemuxu");
+
 		if (m_mgr->allocateDemux(m_frontend ? (eDVBRegisteredFrontend*)*m_frontend : (eDVBRegisteredFrontend*)0, our_demux, cap))
 			return -1;
 
+		demux = *our_demux;
 	}
-	demux = *our_demux;
-		
+	else
+		demux = *our_demux;
+
 	return 0;
 }
 
@@ -2346,7 +2325,6 @@ RESULT eDVBChannel::playSource(ePtr<iTsSource> &source, const char *streaminfo_f
 	}
 
 	m_source = source;
-	m_streaminfo_file = std::string(streaminfo_file);
 	m_tstools.setSource(m_source, streaminfo_file);
 
 	if (m_pvr_fd_dst < 0)
