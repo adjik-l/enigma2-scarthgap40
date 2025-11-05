@@ -798,7 +798,7 @@ RESULT eDVBTSRecorder::start()
 	m_source_fd = ::open(filename, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
 #else
 	m_source_fd = ::open(filename, O_RDONLY | O_CLOEXEC);
-
+#endif
 	if (m_source_fd < 0)
 	{
 		eDebug("[eDVBTSRecorder] FAILED to open demux %s: %m", filename);
