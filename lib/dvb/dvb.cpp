@@ -1793,19 +1793,6 @@ void eDVBChannel::pvrEvent(int event)
 		eDebug("[eDVBChannel] End of file!");
 		m_event(this, evtEOF);
 		break;
-	case eFilePushThread::evtReadError:
-		eDebug("[eDVBChannel] Read error!");
-		if (m_source->isStream()) {
-			eDebug("[eDVBChannel] We are in stream mode, trying to reconnect it!");
-			ePtr<iTsSource> source = m_source;
-			stop();
-			source->reconnect();
-			playSource(source, m_streaminfo_file.c_str());
-		}
-		else {
-			stop();
-		}
-		break;
 	case eFilePushThread::evtUser: /* start */
 		eDebug("[eDVBChannel] SOF");
 		m_event(this, evtSOF);
