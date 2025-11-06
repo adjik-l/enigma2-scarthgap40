@@ -147,7 +147,39 @@ def getCPUInfoString():
 		return "%s %s %s (%s)" % (processor, cpu_speed, freq, ngettext("%d core", "%d cores", cpu_count) % cpu_count)
 	except:
 		return _("undefined")
+		
+def getChipSetString():
+	try:
+		chipset = open("/proc/stb/info/chipset", "r").read()
+		return str(chipset.lower().replace('\n', ''))
+	except OSError:
+		return _("undefined")
 
+
+def getChipSet():
+	try:
+		f = open('/proc/stb/info/chipset', 'r')
+		chipset = f.read()
+		f.close()
+		return str(chipset.lower().replace('\n', '').replace('brcm', '').replace('bcm', ''))
+	except OSError:
+		return _("unavailable")
+
+
+def getCPUBrand():
+	if SystemInfo["HiSilicon"]:
+		return _("HiSilicon")
+	else:
+		return _("Broadcom")
+
+
+def getCPUArch():
+	if SystemInfo["ArchIsARM64"]:
+		return _("ARM64")
+	elif SystemInfo["ArchIsARM"]:
+		return _("ARM")
+	else:
+		return _("Mipsel")
 
 def getDriverInstalledDate():
 	try:
