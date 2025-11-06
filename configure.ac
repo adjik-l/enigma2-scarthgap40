@@ -63,7 +63,13 @@ AC_ARG_WITH(boxtype,
 	[MACHINE="$withval"],[MACHINE="dm800"])
 AC_SUBST(MACHINE)
 AC_DEFINE_UNQUOTED(MACHINE,"$MACHINE",[box type])
+AM_CONDITIONAL(DREAMBOX, test `echo "$BOXTYPE" | cut -b 1-2` == "dm")
 
+AM_CONDITIONAL(HAVE_TEMPFANCONTROL, test "$BOXTYPE" == dm8000 -o "$BOXTYPE" == dm800se -o "$BOXTYPE" == dm500hd)
+if test `echo "$BOXTYPE" | cut -b 1-2` == "dm"; then
+	AC_DEFINE(DREAMBOX, 1, [Dreambox hardware])
+	AC_DEFINE(KEY_PLAY_ACTUALLY_IS_KEY_PLAYPAUSE, 1,[define when rc sends a KEY_PLAY event for its KEY_PLAYPAUSE key])
+fi
 AM_CONDITIONAL(VUSOLO4K, test "$MACHINE" == vusolo4k)
 AM_CONDITIONAL(VUUNO4K, test "$MACHINE" == vuuno4k)
 AM_CONDITIONAL(VUUNO4KSE, test "$MACHINE" == vuuno4kse)
