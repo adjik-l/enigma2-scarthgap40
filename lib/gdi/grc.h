@@ -109,6 +109,7 @@ struct gOpcode
 			int markedpos;
 			int scrollpos;
 			int *offset;
+			int tabwidth;
 		} *renderText;
 
 		struct prenderPara
@@ -158,6 +159,7 @@ struct gOpcode
 		struct prectangle
 		{
 			eRect area;
+			bool useNew;
 		} *rectangle;
 
 		struct pmergePalette
@@ -260,6 +262,11 @@ public:
 
 	void submit(const gOpcode &o);
 
+#ifdef CONFIG_ION
+	void lock();
+	void unlock();
+#endif
+
 	sigc::signal<void()> notify;
 
 	void setSpinnerDC(gDC *dc) { m_spinner_dc = dc; }
@@ -310,9 +317,10 @@ public:
 
 		RT_WRAP = 64,
 		RT_ELLIPSIS = 128,
-		RT_BLEND = 256
+		RT_BLEND = 256,
+		RT_UNDERLINE = 512
 	};
-	void renderText(const eRect &position, const std::string &string, int flags = 0, gRGB bordercolor = gRGB(), int border = 0, int markedpos = -1, int *offset = 0);
+	void renderText(const eRect &position, const std::string &string, int flags = 0, gRGB bordercolor = gRGB(), int border = 0, int markedpos = -1, int *offset = 0, int tabwidth = -1);
 
 	void renderPara(eTextPara *para, ePoint offset = ePoint(0, 0));
 
@@ -345,7 +353,7 @@ public:
 	void blit(gPixmap *pixmap, ePoint pos, const eRect &clip=eRect(), int flags=0);
 	void blit(gPixmap *pixmap, const eRect &pos, const eRect &clip=eRect(), int flags=0);
 
-	void drawRectangle(const eRect &area);
+	void drawRectangle(const eRect &area, bool useNew=false);
 
 	void setPalette(gRGB *colors, int start = 0, int len = 256);
 	void setPalette(gPixmap *source);
