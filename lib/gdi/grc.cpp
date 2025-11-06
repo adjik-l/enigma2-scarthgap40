@@ -4,10 +4,16 @@
 #include <lib/gdi/font.h>
 #include <lib/base/init.h>
 #include <lib/base/init_num.h>
+#include <lib/base/esimpleconfig.h>
 #ifdef USE_LIBVUGLES2
 #include <vuplus_gles.h>
 #endif
 
+//#define GFX_DEBUG_DRAWRECT
+
+#ifdef GFX_DEBUG_DRAWRECT
+#include "../base/benchmark.h"
+#endif
 
 #ifndef SYNC_PAINT
 void *gRC::thread_wrapper(void *ptr)
@@ -20,18 +26,17 @@ gRC *gRC::instance = 0;
 
 gRC::gRC() : rp(0), wp(0)
 #ifdef SYNC_PAINT
-,m_notify_pump(eApp, 0)
+			 ,
+			 m_notify_pump(eApp, 0, "gRC")
 #else
-,m_notify_pump(eApp, 1)
+			 ,
+			 m_notify_pump(eApp, 1, "gRC")
 #endif
 			 ,
 			 m_spinner_enabled(0), m_spinneronoff(1), m_prev_idle_count(0) // NOSONAR
 {
 	ASSERT(!instance);
-	instance=this;
-	m_prev_idle_count = -1;
-	m_spinner_enabled = 0;
-	m_spinneronoff = 1;
+	instance = this;
 	CONNECT(m_notify_pump.recv_msg, gRC::recv_notify);
 #ifndef SYNC_PAINT
 	pthread_mutex_init(&mutex, 0);
@@ -180,7 +185,7 @@ void *gRC::thread()
 
 				/* when the main thread is non-idle for a too long time without any display output,
 				   we want to display a spinner. */
-				struct timespec timeout;
+				struct timespec timeout = {};
 				clock_gettime(CLOCK_REALTIME, &timeout);
 
 				if (m_spinner_enabled)
@@ -227,6 +232,10 @@ void *gRC::thread()
 #endif
 		}
 	}
+#ifdef USE_LIBVUGLES2
+	gles_state_close();
+	gles_close();
+#endif
 #ifndef SYNC_PAINT
 	pthread_exit(0);
 #endif
@@ -404,7 +413,7 @@ void gPainter::setFont(gFont *font)
 	m_rc->submit(o);
 }
 
-void gPainter::renderText(const eRect &pos, const std::string &string, int flags, gRGB bordercolor, int border, int markedpos, int *offset)
+void gPainter::renderText(const eRect &pos, const std::string &string, int flags, gRGB bordercolor, int border, int markedpos, int *offset, int tabwidth)
 {
 	if (string.empty())
 		return;
@@ -419,6 +428,11 @@ void gPainter::renderText(const eRect &pos, const std::string &string, int flags
 	o.parm.renderText->flags = flags;
 	o.parm.renderText->border = border;
 	o.parm.renderText->bordercolor = bordercolor;
+	o.parm.renderText->markedpos = markedpos;
+	o.parm.renderText->offset = offset;
+	o.parm.renderText->tabwidth = tabwidth;
+	if (markedpos >= 0)
+		o.parm.renderText->scrollpos = eSimpleConfig::getInt("config.usage.cursorscroll");
 	m_rc->submit(o);
 }
 
@@ -505,7 +519,7 @@ void gPainter::blit(gPixmap *pixmap, const eRect &pos, const eRect &clip, int fl
 	m_rc->submit(o);
 }
 
-void gPainter::drawRectangle(const eRect &area) {
+void gPainter::drawRectangle(const eRect &area, bool useNew) {
 	if ( m_dc->islocked() )
 		return;
 	gOpcode o;
@@ -513,6 +527,7 @@ void gPainter::drawRectangle(const eRect &area) {
 	o.dc = m_dc.grabRef();
 	o.parm.rectangle = new gOpcode::para::prectangle;
 	o.parm.rectangle->area = area;
+	o.parm.rectangle->useNew = useNew;
 	m_rc->submit(o);
 }
 
@@ -834,17 +849,23 @@ void gDC::exec(const gOpcode *o)
 		break;
 	case gOpcode::renderText:
 	{
+		const char *ellipsis = reinterpret_cast<const char *>(u8"…");
 		ePtr<eTextPara> para = new eTextPara(o->parm.renderText->area);
 		int flags = o->parm.renderText->flags;
+		int border = o->parm.renderText->border;
+		int markedpos = o->parm.renderText->markedpos;
+		int scrollpos = o->parm.renderText->scrollpos;
+		if (markedpos != -1)
+			border = 0;
 		ASSERT(m_current_font);
-		para->setFont(m_current_font);
+		para->setFont(m_current_font, o->parm.renderText->tabwidth);
 
 		if (flags & gPainter::RT_ELLIPSIS)
 		{
 			if (flags & gPainter::RT_WRAP) // Remove wrap
 				flags -= gPainter::RT_WRAP;
 			std::string text = o->parm.renderText->text;
-			text += u8"…";
+			text += ellipsis;
 
 			eTextPara testpara(o->parm.renderText->area);
 			testpara.setFont(m_current_font);
@@ -859,27 +880,31 @@ void gDC::exec(const gOpcode *o)
 				if ((int)text.size() > ns)
 				{
 					text.resize(ns);
-					text += u8"…";
+					text += ellipsis;
 				}
 				if (o->parm.renderText->text)
 					free(o->parm.renderText->text);
 				o->parm.renderText->text = strdup(text.c_str());
 			}
 		}
-		para->renderString(o->parm.renderText->text, (flags & gPainter::RT_WRAP) ? RS_WRAP : 0, o->parm.renderText->border);
+		para->renderString(o->parm.renderText->text, (flags & gPainter::RT_WRAP) ? RS_WRAP : 0, border, markedpos);
 
 		if (o->parm.renderText->text)
 			free(o->parm.renderText->text);
+		if (o->parm.renderText->offset)
+			para->setTextOffset(*o->parm.renderText->offset);
 		if (flags & gPainter::RT_HALIGN_LEFT)
-			para->realign(eTextPara::dirLeft);
+			para->realign(eTextPara::dirLeft, markedpos, scrollpos);
 		else if (flags & gPainter::RT_HALIGN_RIGHT)
-			para->realign(eTextPara::dirRight);
+			para->realign(eTextPara::dirRight, markedpos, scrollpos);
 		else if (flags & gPainter::RT_HALIGN_CENTER)
-			para->realign((flags & gPainter::RT_WRAP) ? eTextPara::dirCenter : eTextPara::dirCenterIfFits);
+			para->realign((flags & gPainter::RT_WRAP) ? eTextPara::dirCenter : eTextPara::dirCenterIfFits, markedpos, scrollpos);
 		else if (flags & gPainter::RT_HALIGN_BLOCK)
-			para->realign(eTextPara::dirBlock);
+			para->realign(eTextPara::dirBlock, markedpos, scrollpos);
 		else
-			para->realign(eTextPara::dirBidi);
+			para->realign(eTextPara::dirBidi, markedpos, scrollpos);
+		if (o->parm.renderText->offset)
+			*o->parm.renderText->offset = para->getTextOffset();
 
 		ePoint offset = m_current_offset;
 
@@ -889,7 +914,7 @@ void gDC::exec(const gOpcode *o)
 			int vcentered_top = o->parm.renderText->area.top() + ((o->parm.renderText->area.height() - bbox.height()) / 2);
 			int correction = vcentered_top - bbox.top();
 			// Only center if it fits, don't push text out the top
-			if (correction > 0)
+			if ((correction > 0) || (para->getLineCount() == 1))
 			{
 				offset += ePoint(0, correction);
 			}
@@ -900,17 +925,88 @@ void gDC::exec(const gOpcode *o)
 			int correction = o->parm.renderText->area.height() - bbox.height() - 2;
 			offset += ePoint(0, correction);
 		}
+		if (markedpos != -1 || flags & gPainter::RT_UNDERLINE)
+		{
+			int glyphs = para->size();
+			int left, width = 0;
+			int top = o->parm.renderText->area.top();
+			int height = fontRenderClass::getInstance()->getLineHeight(*m_current_font);
+			eRect bbox;
+			if (markedpos == -2)
+			{
+				if (glyphs > 0)
+				{
+					// FIXME: Mark each line of text, not the whole rectangle.
+					// (Currently no multiline text is all marked.)
+					bbox = para->getBoundBox();
+					left = bbox.left();
+					width = bbox.width();
+					if (height < bbox.height())
+						height = bbox.height();
+				}
+			}
+			else if (markedpos >= 0 && markedpos < glyphs)
+			{
+				bbox = para->getGlyphBBox(markedpos);
+				left = bbox.left();
+				width = bbox.width();
+				int btop = bbox.top();
+				while (top + height <= btop)
+					top += height;
+			}
+			else if (markedpos > 0xFFFF)
+			{
+				int markedlen = markedpos >> 16;
+				markedpos &= 0xFFFF;
+				int markedlast = markedpos + markedlen - 1;
+				if (markedlast < glyphs)
+				{
+					bbox = para->getGlyphBBox(markedpos);
+					eRect bbox1 = para->getGlyphBBox(markedlast);
+					left = bbox.left();
+					// Assume the mark is on the one line.
+					width = bbox1.right() - left;
+					int btop = bbox.top();
+					while (top + height <= btop)
+						top += height;
+				}
+			}
+			else if(flags & gPainter::RT_UNDERLINE)
+			{
+				if (glyphs > 0)
+				{
+					bbox = para->getBoundBox();
+					left = bbox.left();
+					width = bbox.width();
+					top = height - 1;
+					height = 1;
+				}
+			}
+
+			if (width)
+			{
+				bbox = eRect(left, top, width, height);
+				bbox.moveBy(offset);
+				eRect area = o->parm.renderText->area;
+				area.moveBy(offset);
+				gRegion clip = m_current_clip & bbox & area;
+				if (m_pixmap->needClut())
+					m_pixmap->fill(clip, m_foreground_color);
+				else
+					m_pixmap->fill(clip, m_foreground_color_rgb);
+			}
+		}
 
 		para->setBlend(flags & gPainter::RT_BLEND);
-		
-		if (o->parm.renderText->border)
+
+		if (border)
 		{
 			para->blit(*this, offset, m_background_color_rgb, o->parm.renderText->bordercolor, true);
 			para->blit(*this, offset, o->parm.renderText->bordercolor, m_foreground_color_rgb);
 		}
 		else
 		{
-			para->blit(*this, offset, m_background_color_rgb, m_foreground_color_rgb);
+			para->blit(*this, offset, m_background_color_rgb, m_foreground_color_rgb, false, markedpos != -1);
 		}
 		delete o->parm.renderText;
 		break;
@@ -954,6 +1050,9 @@ void gDC::exec(const gOpcode *o)
 		break;
 	case gOpcode::blit:
 	{
+#ifdef GFX_DEBUG_DRAWRECT
+		Stopwatch s;
+#endif
 		gRegion clip;
 		// this code should be checked again but i'm too tired now
 
@@ -966,9 +1065,20 @@ void gDC::exec(const gOpcode *o)
 		}
 		else
 			clip = m_current_clip;
-		 if (!o->parm.blit->pixmap->surface->transparent)
-		 	o->parm.blit->flags &=~(gPixmap::blitAlphaTest|gPixmap::blitAlphaBlend);
+		if (!o->parm.blit->pixmap->surface->transparent)
+			o->parm.blit->flags &=~(gPixmap::blitAlphaTest|gPixmap::blitAlphaBlend);
 		m_pixmap->blit(*o->parm.blit->pixmap, o->parm.blit->position, clip, m_radius, m_radius_edges, o->parm.blit->flags);
+#ifdef GFX_DEBUG_DRAWRECT
+		if(m_radius)
+		{
+			s.stop();
+			FILE *handle = fopen("/tmp/drawRectangle.perf", "a");
+			if (handle) {
+				fprintf(handle, "%dx%dx%d|%u\n", o->parm.blit->pixmap->size().width(), o->parm.blit->pixmap->size().height(),o->parm.blit->pixmap->surface->bpp, s.elapsed_us());
+				fclose(handle);
+			}
+		}
+#endif
 		m_radius = 0;
 		m_radius_edges = 0;
 		o->parm.blit->pixmap->Release();
@@ -977,15 +1087,28 @@ void gDC::exec(const gOpcode *o)
 	}
 	case gOpcode::rectangle:
 	{
+#ifdef GFX_DEBUG_DRAWRECT
+		Stopwatch s;
+#endif
 		o->parm.rectangle->area.moveBy(m_current_offset);
 		gRegion clip = m_current_clip & o->parm.rectangle->area;
-		m_pixmap->drawRectangle(clip, o->parm.rectangle->area, m_background_color_rgb, m_border_color, m_border_width, m_gradient_colors, m_gradient_orientation, m_radius, m_radius_edges, m_gradient_alphablend, m_gradient_fullSize);
+		m_pixmap->drawRectangle(clip, o->parm.rectangle->area, m_background_color_rgb, m_border_color, m_border_width, m_gradient_colors, m_gradient_orientation, m_radius, m_radius_edges, m_gradient_alphablend, m_gradient_fullSize, o->parm.rectangle->useNew);
 		m_border_width = 0;
 		m_radius = 0;
 		m_radius_edges = 0;
 		m_gradient_orientation = 0;
 		m_gradient_fullSize = 0;
 		m_gradient_alphablend = false;
+		m_gradient_colors.clear();
+#ifdef GFX_DEBUG_DRAWRECT
+		s.stop();
+		FILE *handle = fopen("/tmp/drawRectangle.perf", "a");
+		if (handle) {
+			eRect area = o->parm.rectangle->area;
+			fprintf(handle, "%dx%dx%dx%d|%u\n", area.left(), area.top(), area.width(), area.height(), s.elapsed_us());
+			fclose(handle);
+		}
+#endif
 		delete o->parm.rectangle;
 		break;
 	}
